@@ -6,4 +6,4 @@
  `xsel` [(source)](https://github.com/kfish/xsel) needed in `PATH`
 
  ### Use
- `translator [target_language]` e.c. `translator ru`
+ `translator [target_language]` e.g. `translator ru`
