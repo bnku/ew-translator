@@ -4,7 +4,7 @@ https://crates.io/crates/hotkey
 MIT License
 */
 
-#![allow(unused)]
+// #![allow(unused)]
 use std::collections::HashMap;
 use std::mem;
 use std::os::raw::c_ulong;
