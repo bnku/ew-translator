@@ -305,7 +305,7 @@ checksum = "77f3309417938f28bf8228fcff79a4a37103981e3e186d2ccd19c74b38f4eb71"
 
 [[package]]
 name = "ew-translator"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "clap",
  "gjson",
