@@ -38,7 +38,7 @@ pub mod keys {
     pub const PRINT_SCREEN: u32 = keysym::XK_Print;
     pub const INSERT: u32 = keysym::XK_Insert;
     pub const DELETE: u32 = keysym::XK_Delete;
-    pub const F2: u32 = keysym::XK_F2;
+    pub const F7: u32 = keysym::XK_F7;
 }
 
 pub type ListenerID = (i32, u32);

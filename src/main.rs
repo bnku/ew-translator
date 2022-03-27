@@ -15,7 +15,7 @@ fn hotkey_listener() {
     let mut hk = hotkey::Listener::new();
     hk.register_hotkey(
         0, // hotkey::modifiers::CONTROL, // | hotkey::modifiers::SHIFT,
-        hotkey::keys::F2,
+        hotkey::keys::F7,
         || hotkey_handle(),
     )
     .unwrap();
