@@ -1,9 +1,20 @@
 [package]
-name = "translator"
-version = "0.1.0"
+name = "ew-translator"
+version = "0.1.1"
 edition = "2021"
+license = "GPL-3.0"
+description = """
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+Simple translator for X11.
+
+Translate text from everywhere!
+Select text in some application, press hotkey and receive translation to system notification stack.
+It use Google Translate under the hood.
+"""
+repository = "https://github.com/bnku/ew-translator"
+keywords = ["translate", "translator"]
+readme = "README.md"
+authors = ["bnku <github.com/bnku>"]
 
 [dependencies]
 x11-dl = "2.18.1"
@@ -13,6 +24,7 @@ gjson = "0.8"
 notify-rust = "4"
 urlencoding = "2.1.0"
 lazy_static = "1.4.0"
+clap = { version = "3.1.6", features = ["derive"] }
 
 [profile.release]
 opt-level = "z" 
