@@ -4,18 +4,31 @@ mod hotkey;
 mod settings;
 mod translator;
 use notify_rust::Notification;
+use settings::{HK_KEY, HK_MOD};
 use std::process::Command;
 
 fn main() {
-    settings::parse_args();
-    hotkey_listener();
+    settings::define();
+    add_hotkey_listener();
 }
 
-fn hotkey_listener() {
+fn add_hotkey_listener() {
     let mut hk = hotkey::Listener::new();
     hk.register_hotkey(
-        0, // hotkey::modifiers::CONTROL, // | hotkey::modifiers::SHIFT,
-        hotkey::keys::F2,
+        {
+            let mut buf: u32 = 0;
+            for key in &*HK_MOD.read().unwrap() {
+                buf |= key;
+            }
+            buf
+        },
+        {
+            let mut buf: u32 = 0;
+            for key in &*HK_KEY.read().unwrap() {
+                buf |= key;
+            }
+            buf
+        },
         || hotkey_handle(),
     )
     .unwrap();
@@ -24,13 +37,10 @@ fn hotkey_listener() {
 
 fn hotkey_handle() {
     let text = get_clipboard();
-    // dbg!(&text);
-
     let translation = match translator::google(text) {
         Ok(v) => v,
         Err(e) => e.to_string(),
     };
-    // println!("{}", &translation);
     send_notification(translation);
 }
 
