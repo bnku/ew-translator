@@ -1,27 +1,29 @@
+use clap::Parser;
 use lazy_static::lazy_static;
 use std::sync::RwLock;
 
-use super::hotkey;
-use clap::Parser;
+pub mod default_settings {
+    pub const LANG: &str = "ru";
+    pub const HOTKEY: &str = "CTRL+SHIFT+F7";
+}
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct Args {
     /// Target language
-    #[clap(short, long, default_value_t = String::from("ru"))]
+    #[clap(short, long, default_value_t = default_settings::LANG.to_string())]
     lang: String,
 
     /// Hotkeys (modifier+key).
     /// Modifiers: ALT, CTRL, SHIFT, SUPER;
     /// Keys: 0-9, A-Z, F1-F12, BACKSPACE, TAB, ENTER, CAPS_LOCK, ESCAPE, SPACEBAR, PAGE_UP, PAGE_DOWN, END, HOME, ARROW_LEFT, ARROW_RIGHT, ARROW_UP, ARROW_DOWN, PRINT_SCREEN, INSERT, DELETE
-    #[clap(short, long, default_value_t = String::from("CTRL+SHIFT+Z"))]
+    #[clap(short, long, default_value_t = default_settings::HOTKEY.to_string())]
     hotkeys: String,
 }
 
 lazy_static! {
-    pub static ref TARGET_LANG: RwLock<String> = RwLock::new("ru".to_string());
-    pub static ref HK_MOD: RwLock<Vec<u32>> = RwLock::new(vec![]);
-    pub static ref HK_KEY: RwLock<Vec<u32>> = RwLock::new(vec![]);
+    pub static ref TARGET_LANG: RwLock<String> = RwLock::new(default_settings::LANG.to_string());
+    pub static ref HOTKEYS: RwLock<String> = RwLock::new(default_settings::HOTKEY.to_string());
 }
 
 pub fn define() {
@@ -35,13 +37,7 @@ fn set_lang(lang: String) {
     println!("Target language is `{}`", *TARGET_LANG.read().unwrap());
 }
 
-fn set_hotkeys(keys: String) {
-    for s in keys.split('+') {
-        let key = hotkey::get_key(&s.to_uppercase());
-        match key.0 {
-            1 => HK_MOD.write().unwrap().push(key.1),
-            2 => HK_KEY.write().unwrap().push(key.1),
-            _ => (),
-        }
-    }
+fn set_hotkeys(hotkey: String) {
+    *HOTKEYS.write().unwrap() = hotkey;
+    println!("Hotkeys is `{}`", *HOTKEYS.read().unwrap());
 }

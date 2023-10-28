@@ -1,10 +1,8 @@
-// #![allow(unused)]
-
 mod hotkey;
 mod settings;
 mod translator;
 use notify_rust::Notification;
-use settings::{HK_KEY, HK_MOD};
+use settings::HOTKEYS;
 use std::process::Command;
 
 fn main() {
@@ -13,25 +11,7 @@ fn main() {
 }
 
 fn add_hotkey_listener() {
-    let mut hk = hotkey::Listener::new();
-    hk.register_hotkey(
-        {
-            let mut buf: u32 = 0;
-            for key in &*HK_MOD.read().unwrap() {
-                buf |= key;
-            }
-            buf
-        },
-        {
-            let mut buf: u32 = 0;
-            for key in &*HK_KEY.read().unwrap() {
-                buf |= key;
-            }
-            buf
-        },
-        || hotkey_handle(),
-    )
-    .unwrap();
+    let hk = hotkey::Listener::new(&HOTKEYS.read().unwrap());
     hk.listen();
 }
 

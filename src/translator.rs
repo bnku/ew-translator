@@ -14,6 +14,7 @@ pub async fn google(phrase: String) -> Result<String, reqwest::Error> {
     );
 
     let json = reqwest::get(url).await?.text().await?;
+    // println!("{}",String::from(&json));
 
     let mut result = String::from("");
     for line in gjson::get(&json, "0.#.0").array() {
