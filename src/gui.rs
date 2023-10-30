@@ -46,7 +46,8 @@ pub fn show_window(handler: &AppHandle) {
     // window.open_devtools();
 
     let translation = translate();
-    println!("{}", translation);
+    // println!("{}", translation);
+
     window
         .emit(
             "translate",
