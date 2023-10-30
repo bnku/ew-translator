@@ -5,6 +5,7 @@ use std::sync::RwLock;
 pub mod default_settings {
     pub const LANG: &str = "ru";
     pub const HOTKEY: &str = "CTRL+SHIFT+F7";
+    pub const WINDOW_LABEL: &str = "translation";
 }
 
 #[derive(Parser, Debug)]
@@ -24,6 +25,8 @@ pub struct Args {
 lazy_static! {
     pub static ref TARGET_LANG: RwLock<String> = RwLock::new(default_settings::LANG.to_string());
     pub static ref HOTKEYS: RwLock<String> = RwLock::new(default_settings::HOTKEY.to_string());
+    pub static ref WINDOW_LABEL: RwLock<String> =
+        RwLock::new(default_settings::WINDOW_LABEL.to_string());
 }
 
 pub fn define() {

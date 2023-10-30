@@ -1,6 +1,6 @@
 [package]
 name = "ew-translator"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 license = "GPL-3.0"
 description = """
@@ -16,19 +16,32 @@ keywords = ["translate", "translator"]
 readme = "README.md"
 authors = ["bnku <github.com/bnku>"]
 
+[build-dependencies]
+tauri-build = { version = "1.5.0", features = [] }
+
 [dependencies]
 reqwest = "0.11.10"
-tokio = { version = "1", features = ["rt-multi-thread","macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 gjson = "0.8"
 notify-rust = "4"
 urlencoding = "2.1.0"
 lazy_static = "1.4.0"
 clap = { version = "3.1.6", features = ["derive"] }
 global-hotkey = "0.4.0"
+mouse_position = "0.1.3"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "1.5.2", features = [ "window-show", "window-hide", "window-set-focus", "window-set-size", "global-shortcut-all"] }
 
 [profile.release]
 opt-level = "z" 
 lto = true
+
+[features]
+# this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
+# If you use cargo directly instead of tauri's cli you can use this feature flag to switch between tauri's `dev` and `build` modes.
+# DO NOT REMOVE!!
+custom-protocol = [ "tauri/custom-protocol" ]
 
 # compress binary:
 # upx --best --lzma target/release/translator

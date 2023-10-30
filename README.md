@@ -1,6 +1,6 @@
 # Simple translator for X11  
 Translate text from everywhere!  
-Select text in some application, press hotkey and receive translation to system notification stack.  
+Select text in some application, press hotkey and receive translation to pop-up window.  
 It use Google Translate under the hood. 
 
 ### Dependencies

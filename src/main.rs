@@ -1,27 +1,39 @@
-mod hotkey;
+mod gui;
 mod settings;
 mod translator;
-use notify_rust::Notification;
-use settings::HOTKEYS;
+use settings::{HOTKEYS, WINDOW_LABEL};
 use std::process::Command;
+use tauri::GlobalShortcutManager;
 
 fn main() {
-    settings::define();
-    add_hotkey_listener();
+    tauri::Builder::default()
+        .setup(|app| {
+            settings::define();
+
+            let app_handle = app.handle(); //.clone();
+            gui::create_window(&app_handle, &WINDOW_LABEL.read().unwrap(), "index.html");
+            gui::hide_window(&app_handle);
+
+            app_handle
+                .global_shortcut_manager()
+                .register(&HOTKEYS.read().unwrap(), move || {
+                    gui::show_window(&app_handle)
+                })
+                .unwrap();
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 
-fn add_hotkey_listener() {
-    let hk = hotkey::Listener::new(&HOTKEYS.read().unwrap());
-    hk.listen();
-}
-
-fn hotkey_handle() {
+fn translate() -> String {
     let text = get_clipboard();
     let translation = match translator::google(text) {
         Ok(v) => v,
         Err(e) => e.to_string(),
     };
-    send_notification(translation);
+    translation
 }
 
 fn get_clipboard() -> String {
@@ -34,16 +46,4 @@ fn get_clipboard() -> String {
         Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
     };
     String::from(text)
-}
-
-fn send_notification(text: String) {
-    match Notification::new()
-        .summary("Translation")
-        .body(text.as_str())
-        .icon("locale")
-        .show()
-    {
-        Err(e) => panic!("Notification send error: {}", e),
-        _ => (),
-    }
 }

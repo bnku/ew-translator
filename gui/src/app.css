@@ -1,0 +1,15 @@
+html,
+body {
+  margin: 0;
+  width: 400px;
+  max-height: 80vw;
+  overflow-x: hidden;
+}
+
+#app {
+  display: flex;
+  width: auto;
+  max-width: 1280px;
+  margin: 0 auto;
+  text-align: center;
+}
