@@ -13,6 +13,8 @@ $ ew-translator -l [target language] -h [hotkeys]
 e.g. `ew-translator -l ru -h ctrl+shift+f7`  
 or `ew-translator -l fr -h z`
 
+![](video.webm)
+
 ### Help
 ```sh
 USAGE:
