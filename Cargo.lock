@@ -946,6 +946,7 @@ version = "1.0.0"
 dependencies = [
  "clap",
  "global-hotkey",
+ "gtk",
  "lazy_static",
  "mouse_position",
  "notify-rust",

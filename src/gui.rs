@@ -35,6 +35,28 @@ pub fn set_window_position(window: &Window) {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn focus_window(window: &Window) {
+    use gtk::prelude::*;
+
+    if let Ok(gtk_window) = window.gtk_window() {
+        gtk_window.set_accept_focus(true);
+        gtk_window.set_focus_on_map(true);
+        gtk_window.present();
+
+        if let Some(gdk_window) = gtk_window.window() {
+            gdk_window.set_accept_focus(true);
+            gdk_window.set_focus_on_map(true);
+            gdk_window.focus(0);
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn focus_window(window: &Window) {
+    _ = window.set_focus();
+}
+
 #[derive(Clone, serde::Serialize)]
 struct Payload {
     message: String,
@@ -56,8 +78,8 @@ pub fn show_window(handler: &AppHandle) {
             },
         )
         .unwrap();
+    set_window_position(&window);
     window.show().unwrap();
     _ = window.set_always_on_top(true);
-    _ = window.set_focus();
-    set_window_position(&window);
+    focus_window(&window);
 }

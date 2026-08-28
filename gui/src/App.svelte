@@ -6,15 +6,12 @@
   const setSize = async () => {
     const block: HTMLElement | null = document.querySelector(".translation");
     if (block) await appWindow.setSize(new LogicalSize(block.offsetWidth, block.offsetHeight));
-    await appWindow.setFocus();
   };
 
   let translation = "";
 
-  $: {
-    translation;
+  $: if (translation) {
     setSize();
-    appWindow.setFocus();
   }
 
   interface translateEvent {
@@ -33,13 +30,7 @@
       }, 100);
     });
 
-    appWindow.listen("tauri://focus", ({ event, payload }) => {
-      console.log("focus");
-      setSize();
-    });
-
-    appWindow.listen("tauri://blur", ({ event, payload }) => {
-      console.log("blur");
+    appWindow.listen("tauri://blur", () => {
       translation = "";
       appWindow.hide();
     });
