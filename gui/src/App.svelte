@@ -27,7 +27,7 @@
   onMount(async () => {
     await listen("translate", (event: translateEvent) => {
       console.log(event.event, event.payload, event.payload.message);
-      translation = event.payload.message.replaceAll("\n", "<br/>");
+      translation = event.payload.message;
       setTimeout(() => {
         setSize();
       }, 100);
@@ -48,7 +48,7 @@
 
 <main>
   <div class="translation">
-    {@html translation}
+    {translation}
   </div>
 </main>
 
@@ -63,6 +63,8 @@
     line-height: 20px;
     opacity: 0.9;
     text-align: left;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .translation:hover {
     opacity: 1;

@@ -31,7 +31,10 @@ fn translate() -> String {
     let text = get_clipboard();
     let translation = match translator::google(text) {
         Ok(v) => v,
-        Err(e) => e.to_string(),
+        Err(e) => {
+            eprintln!("Translation failed: {e}");
+            e.to_string()
+        }
     };
     translation
 }
