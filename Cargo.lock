@@ -942,12 +942,11 @@ dependencies = [
 
 [[package]]
 name = "ew-translator"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "clap",
  "global-hotkey",
  "gtk",
- "lazy_static",
  "mouse_position",
  "notify-rust",
  "reqwest",
@@ -956,6 +955,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "toml 0.8.6",
 ]
 
 [[package]]

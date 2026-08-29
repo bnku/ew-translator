@@ -9,6 +9,7 @@
   };
 
   let translation = "";
+  let currentRequestId = 0;
 
   $: if (translation) {
     setSize();
@@ -17,13 +18,16 @@
   interface translateEvent {
     event: EventName;
     payload: {
+      request_id: number;
       message: string;
+      loading: boolean;
     };
   }
 
   onMount(async () => {
     await listen("translate", (event: translateEvent) => {
-      console.log(event.event, event.payload, event.payload.message);
+      if (event.payload.request_id < currentRequestId) return;
+      currentRequestId = event.payload.request_id;
       translation = event.payload.message;
       setTimeout(() => {
         setSize();

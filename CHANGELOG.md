@@ -1,3 +1,29 @@
+# v1.1.0 (2026-08-29)
+
+### Additions
+
+* add Google Gemini, OpenRouter, OpenAI, and OpenAI-compatible translation sources
+* configure providers through command-line options, environment variables, or an optional TOML file
+* document all environment variables in the binary's `--help` output
+
+### Changes
+
+* keep Google Translate as the zero-configuration default while reporting a concise, actionable error when it returns HTTP 429
+* run translation requests outside the Tauri event loop and ignore stale responses from older shortcut invocations
+* validate provider credentials, models, and API URLs at startup without logging API keys
+* print the resolved provider, model, target language, shortcut, and API URL at startup for easier diagnostics
+
+### Fixes
+
+* report missing `xsel`, invalid selection text, provider HTTP failures, and malformed API responses in the popup
+* use the canonical GitHub repository URL in OpenRouter attribution headers
+
+### Maintenance
+
+* add provider parser, configuration precedence, request-shape, and loopback HTTP tests
+* document provider selection, configuration files, credential handling, and release installation
+
+
 # v1.0.1 (2026-08-28)
 
 ### Fixes

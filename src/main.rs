@@ -1,25 +1,38 @@
 mod gui;
 mod settings;
 mod translator;
-use settings::{HOTKEYS, WINDOW_LABEL};
-use std::process::Command;
+
+use std::{process::Command, sync::Arc};
 use tauri::GlobalShortcutManager;
+use translator::Translator;
 
 fn main() {
-    tauri::Builder::default()
-        .setup(|app| {
-            settings::define();
+    // Parse configuration before Tauri initializes GTK so `--help` and
+    // configuration errors also work in headless shells.
+    let settings = settings::load().unwrap_or_else(|error| {
+        eprintln!("Configuration error: {error}");
+        std::process::exit(2);
+    });
 
-            let app_handle = app.handle(); //.clone();
-            gui::create_window(&app_handle, &WINDOW_LABEL.read().unwrap(), "index.html");
+    tauri::Builder::default()
+        .setup(move |app| {
+            let translator = Arc::new(Translator::new(settings.translation.clone())?);
+            let app_handle = app.handle();
+
+            gui::create_window(&app_handle, settings::WINDOW_LABEL, "index.html");
             gui::hide_window(&app_handle);
 
+            let shortcut_handle = app_handle.clone();
+            let target_lang = settings.target_lang.clone();
             app_handle
                 .global_shortcut_manager()
-                .register(&HOTKEYS.read().unwrap(), move || {
-                    gui::show_window(&app_handle)
-                })
-                .unwrap();
+                .register(&settings.hotkeys, move || {
+                    gui::show_window(
+                        &shortcut_handle,
+                        Arc::clone(&translator),
+                        target_lang.clone(),
+                    )
+                })?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![])
@@ -27,26 +40,31 @@ fn main() {
         .expect("error while running tauri application");
 }
 
-fn translate() -> String {
-    let text = get_clipboard();
-    let translation = match translator::google(text) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Translation failed: {e}");
-            e.to_string()
+pub(crate) fn translate(translator: &Translator, target_lang: &str) -> String {
+    let result = get_selection().and_then(|text| {
+        translator
+            .translate(&text, target_lang)
+            .map_err(|error| error.to_string())
+    });
+
+    match result {
+        Ok(translation) => translation,
+        Err(error) => {
+            eprintln!("Translation failed: {error}");
+            error
         }
-    };
-    translation
+    }
 }
 
-fn get_clipboard() -> String {
+fn get_selection() -> Result<String, String> {
     let output = Command::new("xsel")
         .arg("-o")
         .output()
-        .expect("Not found binary: xsel");
-    let text = match std::str::from_utf8(&output.stdout) {
-        Ok(v) => v,
-        Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-    };
-    String::from(text)
+        .map_err(|error| format!("Cannot run xsel: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("xsel exited with status {}", output.status));
+    }
+
+    String::from_utf8(output.stdout)
+        .map_err(|error| format!("xsel returned invalid UTF-8: {error}"))
 }
