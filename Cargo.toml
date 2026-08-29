@@ -11,7 +11,7 @@ Translate text from everywhere!
 Select text in some application, press hotkey and receive translation to pop-up window.
 Supports Google Translate, Gemini, OpenRouter, OpenAI, and OpenAI-compatible APIs.
 """
-repository = "https://github.com/bnku/translate-everywhere"
+repository = "https://github.com/bnku/ew-translator"
 keywords = ["translate", "translator"]
 readme = "README.md"
 authors = ["bnku <github.com/bnku>"]

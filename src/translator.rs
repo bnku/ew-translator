@@ -590,9 +590,7 @@ mod tests {
         assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1"));
         assert!(lower_request.contains("authorization: bearer test-secret"));
         assert!(lower_request.contains("x-openrouter-title: ew-translator"));
-        assert!(
-            lower_request.contains("http-referer: https://github.com/bnku/translate-everywhere")
-        );
+        assert!(lower_request.contains("http-referer: https://github.com/bnku/ew-translator"));
         assert!(request.contains(r#""model":"provider/model""#));
         assert!(request.contains("Target language: ru"));
     }

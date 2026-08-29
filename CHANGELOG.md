@@ -16,7 +16,6 @@
 ### Fixes
 
 * report missing `xsel`, invalid selection text, provider HTTP failures, and malformed API responses in the popup
-* use the canonical GitHub repository URL in OpenRouter attribution headers
 
 ### Maintenance
 
