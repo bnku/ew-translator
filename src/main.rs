@@ -23,7 +23,7 @@ fn main() -> eframe::Result<()> {
             .with_title("ew-translator")
             .with_decorations(false)
             .with_always_on_top()
-            .with_inner_size([300.0, 60.0])
+            .with_inner_size([120.0, 36.0])
             .with_visible(false)
             .with_resizable(false),
         ..Default::default()

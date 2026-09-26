@@ -115,9 +115,12 @@ impl TranslatorApp {
         let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
         self.current_request_id = request_id;
 
+        // Reset window size for new request so it doesn't preserve previous large dimensions
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(130.0, 36.0)));
+
         // Mouse::get_mouse_position returns physical screen coordinates.
         // egui ViewportCommand::OuterPosition takes logical points!
-        // Across multi-monitor setups, we must convert physical -> logical:
+        // Across multi-monitor setups, convert physical -> logical:
         let ppp = ctx.pixels_per_point().max(1.0);
         let logical_pos = match Mouse::get_mouse_position() {
             Mouse::Position { x, y } => {
@@ -129,7 +132,7 @@ impl TranslatorApp {
         };
 
         self.target_pos = logical_pos;
-        self.reposition_counter = 4; // Re-apply position for the first few frames after showing
+        self.reposition_counter = 4;
         self.visible = true;
         self.has_focus = false;
         self.just_opened = 4;
@@ -272,11 +275,11 @@ impl eframe::App for TranslatorApp {
                     return;
                 }
 
-                // Adjust window dimensions tightly to content size
-                let content_size = ui.min_size();
+                // Adjust window dimensions tightly and strictly to the rendered widget size!
+                let text_size = resp.rect.size();
                 let target_size = egui::vec2(
-                    (content_size.x + 28.0).clamp(140.0, 420.0),
-                    (content_size.y + 20.0).clamp(32.0, 600.0),
+                    (text_size.x + 28.0).clamp(60.0, 420.0),
+                    (text_size.y + 20.0).clamp(32.0, 600.0),
                 );
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_size));
             });
