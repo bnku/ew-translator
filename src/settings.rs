@@ -2,7 +2,6 @@ use clap::Parser;
 use serde::Deserialize;
 use std::{env, error::Error, fmt, fs, path::PathBuf, str::FromStr};
 
-pub const WINDOW_LABEL: &str = "translation";
 
 const DEFAULT_LANG: &str = "ru";
 const DEFAULT_HOTKEYS: &str = "CTRL+SHIFT+F7";

@@ -1,116 +1,288 @@
-use mouse_position::mouse_position::Mouse;
 use std::{
+    str::FromStr,
     sync::{
         atomic::{AtomicU64, Ordering},
+        mpsc::{channel, Receiver, Sender},
         Arc,
     },
     thread,
 };
-use tauri::window::WindowBuilder;
-use tauri::{AppHandle, Manager, PhysicalPosition, Position, Window, WindowUrl};
 
-use crate::{settings::WINDOW_LABEL, translate, translator::Translator};
+use eframe::egui::{self, CornerRadius, FontData, FontDefinitions, FontFamily, Frame, Margin};
+use global_hotkey::{
+    hotkey::HotKey,
+    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
+};
+use mouse_position::mouse_position::Mouse;
+
+use crate::{
+    selection,
+    settings::Settings,
+    translator::Translator,
+};
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
-pub fn create_window(handler: &AppHandle, label: &str, url: &str) {
-    WindowBuilder::new(handler, label, WindowUrl::App(url.into()))
-        .title(label)
-        .inner_size(1000.0, 40.0)
-        .fullscreen(false)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .build()
-        .expect("cannot create translation window");
+enum TranslationEvent {
+    Result {
+        request_id: u64,
+        result: Result<String, String>,
+    },
 }
 
-pub fn hide_window(handler: &AppHandle) {
-    let window = handler
-        .get_window(WINDOW_LABEL)
-        .expect("translation window is missing");
-    window.hide().expect("cannot hide translation window");
-}
+pub struct TranslatorApp {
+    translator: Arc<Translator>,
+    settings: Settings,
+    hotkey: HotKey,
+    hotkey_event_rx: Receiver<GlobalHotKeyEvent>,
+    _hotkey_manager: GlobalHotKeyManager,
 
-pub fn set_window_position(window: &Window) {
-    match Mouse::get_mouse_position() {
-        Mouse::Position { x, y } => {
-            let _ = window.set_position(Position::Physical(PhysicalPosition { x, y }));
-        }
-        Mouse::Error => eprintln!("Cannot get mouse position"),
-    }
-}
+    translation_tx: Sender<TranslationEvent>,
+    translation_rx: Receiver<TranslationEvent>,
 
-#[cfg(target_os = "linux")]
-fn focus_window(window: &Window) {
-    use gtk::prelude::*;
-
-    if let Ok(gtk_window) = window.gtk_window() {
-        gtk_window.set_accept_focus(true);
-        gtk_window.set_focus_on_map(true);
-        gtk_window.present();
-
-        if let Some(gdk_window) = gtk_window.window() {
-            gdk_window.set_accept_focus(true);
-            gdk_window.set_focus_on_map(true);
-            gdk_window.focus(0);
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn focus_window(window: &Window) {
-    let _ = window.set_focus();
-}
-
-#[derive(Clone, serde::Serialize)]
-struct Payload {
-    request_id: u64,
-    message: String,
+    visible: bool,
     loading: bool,
+    text: String,
+    current_request_id: u64,
+    has_focus: bool,
+    just_opened: u8,
 }
 
-pub fn show_window(handler: &AppHandle, translator: Arc<Translator>, target_lang: String) {
-    let window = handler
-        .get_window(WINDOW_LABEL)
-        .expect("translation window is missing");
-    let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+impl TranslatorApp {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        settings: Settings,
+        translator: Arc<Translator>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        setup_fonts(&cc.egui_ctx);
 
-    emit_translation(&window, request_id, "Translating…".into(), true);
-    set_window_position(&window);
-    window.show().expect("cannot show translation window");
-    let _ = window.set_always_on_top(true);
-    focus_window(&window);
+        let hotkey_manager = GlobalHotKeyManager::new()
+            .map_err(|e| format!("Failed to initialize global hotkey manager: {e}"))?;
 
-    let worker_handle = handler.clone();
-    let spawn_result = thread::Builder::new()
-        .name(format!("translation-{request_id}"))
-        .spawn(move || {
-            let message = translate(&translator, &target_lang);
-            if let Some(window) = worker_handle.get_window(WINDOW_LABEL) {
-                emit_translation(&window, request_id, message, false);
+        let hotkey = HotKey::from_str(&settings.hotkeys)
+            .or_else(|_| HotKey::from_str(&settings.hotkeys.to_uppercase()))
+            .map_err(|e| format!("Invalid hotkey string '{}': {e}", settings.hotkeys))?;
+
+        hotkey_manager
+            .register(hotkey)
+            .map_err(|e| format!("Failed to register hotkey '{}': {e}", settings.hotkeys))?;
+
+        let (hotkey_tx, hotkey_event_rx) = channel();
+        let hotkey_receiver = GlobalHotKeyEvent::receiver();
+        let ctx_clone = cc.egui_ctx.clone();
+
+        thread::Builder::new()
+            .name("hotkey-listener".into())
+            .spawn(move || {
+                while let Ok(event) = hotkey_receiver.recv() {
+                    let _ = hotkey_tx.send(event);
+                    ctx_clone.request_repaint();
+                }
+            })?;
+
+        let (translation_tx, translation_rx) = channel();
+
+        Ok(Self {
+            translator,
+            settings,
+            hotkey,
+            hotkey_event_rx,
+            _hotkey_manager: hotkey_manager,
+            translation_tx,
+            translation_rx,
+            visible: false,
+            loading: false,
+            text: String::new(),
+            current_request_id: 0,
+            has_focus: false,
+            just_opened: 0,
+        })
+    }
+
+    fn hide(&mut self, ctx: &egui::Context) {
+        self.visible = false;
+        self.has_focus = false;
+        self.just_opened = 0;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    }
+
+    fn trigger_translation(&mut self, ctx: &egui::Context) {
+        let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+        self.current_request_id = request_id;
+
+        let mouse_pos = match Mouse::get_mouse_position() {
+            Mouse::Position { x, y } => Some(egui::pos2(x as f32, y as f32)),
+            Mouse::Error => None,
+        };
+
+        if let Some(pos) = mouse_pos {
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos + egui::vec2(10.0, 15.0)));
+        }
+
+        self.visible = true;
+        self.has_focus = false;
+        self.just_opened = 3;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+
+        match selection::get_selected_text() {
+            Ok(phrase) => {
+                self.loading = true;
+                self.text = "Translating…".to_string();
+
+                let translator = Arc::clone(&self.translator);
+                let target_lang = self.settings.target_lang.clone();
+                let tx = self.translation_tx.clone();
+                let ctx_clone = ctx.clone();
+
+                let spawn_res = thread::Builder::new()
+                    .name(format!("translation-{request_id}"))
+                    .spawn(move || {
+                        let result = translator
+                            .translate(&phrase, &target_lang)
+                            .map_err(|e| e.to_string());
+                        let _ = tx.send(TranslationEvent::Result { request_id, result });
+                        ctx_clone.request_repaint();
+                    });
+
+                if let Err(e) = spawn_res {
+                    let _ = self.translation_tx.send(TranslationEvent::Result {
+                        request_id,
+                        result: Err(format!("Worker error: {e}")),
+                    });
+                    ctx.request_repaint();
+                }
             }
-        });
-
-    if let Err(error) = spawn_result {
-        emit_translation(
-            &window,
-            request_id,
-            format!("Cannot start translation worker: {error}"),
-            false,
-        );
+            Err(err) => {
+                self.loading = false;
+                self.text = err;
+            }
+        }
     }
 }
 
-fn emit_translation(window: &Window, request_id: u64, message: String, loading: bool) {
-    if let Err(error) = window.emit(
-        "translate",
-        Payload {
-            request_id,
-            message,
-            loading,
-        },
-    ) {
-        eprintln!("Cannot update translation window: {error}");
+impl eframe::App for TranslatorApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process hotkey events
+        while let Ok(event) = self.hotkey_event_rx.try_recv() {
+            if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
+                self.trigger_translation(ctx);
+            }
+        }
+
+        // Process translation results
+        while let Ok(event) = self.translation_rx.try_recv() {
+            match event {
+                TranslationEvent::Result { request_id, result } => {
+                    if request_id >= self.current_request_id {
+                        self.loading = false;
+                        match result {
+                            Ok(translation) => self.text = translation,
+                            Err(error) => self.text = format!("Error: {error}"),
+                        }
+                    }
+                }
+            }
+        }
+
+        if !self.visible {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            return;
+        }
+
+        // Handle Escape key
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.hide(ctx);
+            return;
+        }
+
+        // Handle focus loss
+        let is_focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        if is_focused {
+            self.has_focus = true;
+        }
+
+        if self.just_opened > 0 {
+            self.just_opened -= 1;
+        } else if self.has_focus && !is_focused {
+            self.hide(ctx);
+            return;
+        }
+
+        egui::CentralPanel::default()
+            .frame(Frame::NONE)
+            .show(ctx, |ui| {
+                let card = Frame::NONE
+                    .fill(egui::Color32::from_rgba_unmultiplied(22, 22, 26, 242))
+                    .corner_radius(CornerRadius::same(8))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
+                    .inner_margin(Margin::symmetric(14, 10));
+
+                let resp = card.show(ui, |ui| {
+                    ui.set_max_width(420.0);
+                    if self.loading {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new(&self.text)
+                                    .size(15.0)
+                                    .color(egui::Color32::from_rgb(180, 180, 190)),
+                            );
+                        });
+                    } else {
+                        let label = egui::Label::new(
+                            egui::RichText::new(&self.text)
+                                .size(15.0)
+                                .color(egui::Color32::from_rgb(245, 245, 245)),
+                        )
+                        .wrap();
+                        ui.add(label);
+                    }
+                });
+
+                if !self.loading && resp.response.clicked() {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(&self.text);
+                    }
+                    self.hide(ctx);
+                    return;
+                }
+
+                let content_size = resp.response.rect.size();
+                let target_size = egui::vec2(
+                    (content_size.x + 2.0).clamp(160.0, 460.0),
+                    (content_size.y + 2.0).clamp(36.0, 600.0),
+                );
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_size));
+            });
     }
+
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        egui::Rgba::TRANSPARENT.to_array()
+    }
+}
+
+fn setup_fonts(ctx: &egui::Context) {
+    let mut fonts = FontDefinitions::default();
+    fonts.font_data.insert(
+        "roboto".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/Roboto-Regular.ttf"
+        ))),
+    );
+
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "roboto".to_owned());
+
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .push("roboto".to_owned());
+
+    ctx.set_fonts(fonts);
 }
