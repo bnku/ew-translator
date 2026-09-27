@@ -1,148 +1,119 @@
 # ew-translator
 
-A fast popup translator for X11. Select text in any application, press a global shortcut, and get the translation next to the pointer.
-
-Google Translate remains the zero-configuration default. If its unofficial endpoint rate-limits you, ew-translator can use Google Gemini, OpenRouter, OpenAI, or any server that implements the OpenAI Chat Completions API.
-
-Provider selection is explicit: ew-translator does not automatically fall back to another source after an error. For example, an OpenRouter model ID such as `google/gemini-2.5-flash-lite` still uses OpenRouter; the `google/` prefix identifies the model provider and does not select Google Translate.
+> **Instant, lightweight popup translator right at your fingertips.**  
+> Select text in any application, press a global shortcut, and view the translation instantly next to your pointer.
 
 ![Usage preview](video.gif)
 
-## Dependencies
+## Why ew-translator?
 
-`xsel` must be available in `PATH`.
+- **⚡ Lightning Fast & Pure Rust** — Instant startup and minimal memory footprint. No heavy web engines, Electron, or WebKit.
+- **🎯 Smart Adaptive Popup** — The window automatically hugs the content. A tiny badge for single words, a comfortable card for sentences, and a smooth scrollbar for long articles.
+- **🖥️ Multi-Monitor & Edge Aware** — Never goes off-screen. Intelligently flips upward when invoked near the bottom of your display and stays clamped within your monitor's bounds.
+- **✨ Seamless UX** — Copy translated text with standard selection (`Ctrl+C`). Dismiss with a single click outside or `Esc`.
+- **🤖 Modern AI & Traditional Providers** — Works out-of-the-box with Google Translate (zero setup), or connect Google Gemini, OpenRouter, OpenAI, or local LLMs (Ollama, LM Studio).
 
-## Install a prebuilt binary
+---
 
-GitHub releases provide an UPX-compressed Linux x86_64 binary and its SHA-256 checksum. Download both files into the same directory, then verify and install them:
+## Quick Start
+
+Launch `ew-translator` with your preferred hotkey and target language:
 
 ```sh
-sha256sum --check ew-translator.sha256
+# Default: Russian translation with F7 hotkey
+ew-translator -h f7
+
+# Translate into English with Alt+T
+ew-translator -l en -h 'ALT+T'
+```
+
+Select text anywhere on your screen and press your hotkey!
+
+---
+
+## Translation Providers
+
+### 1. Google Translate (Default)
+Ready to use immediately with zero configuration:
+```sh
+ew-translator -h f7
+```
+
+### 2. Google Gemini
+Translate using Gemini's fast models (defaults to `gemini-2.5-flash-lite`):
+```sh
+export EW_TRANSLATOR_SOURCE='gemini'
+export EW_TRANSLATOR_API_KEY='your-gemini-key'
+ew-translator -h f7
+```
+
+### 3. OpenRouter
+Access hundreds of models (e.g. `google/gemini-2.5-flash-lite`, Claude, Llama):
+```sh
+export EW_TRANSLATOR_SOURCE='openrouter'
+export EW_TRANSLATOR_API_KEY='your-openrouter-key'
+export EW_TRANSLATOR_MODEL='google/gemini-2.5-flash-lite'
+ew-translator -h f7
+```
+
+### 4. OpenAI & Local LLMs
+Use OpenAI directly or any OpenAI-compatible endpoint (like Ollama or LM Studio):
+```sh
+export EW_TRANSLATOR_SOURCE='openai'
+export EW_TRANSLATOR_API_KEY='your-key'
+export EW_TRANSLATOR_MODEL='gpt-4o-mini'
+# For local LLMs, add your API URL:
+# export EW_TRANSLATOR_API_URL='http://localhost:11434/v1'
+ew-translator -h f7
+```
+
+---
+
+## Installation
+
+### Prebuilt Binaries
+Download the latest prebuilt binary from [Releases](https://github.com/bnku/ew-translator/releases):
+```sh
 install -m 755 ew-translator ~/.local/bin/ew-translator
 ```
 
-## Quick start
-
-The default target language is Russian and the default shortcut is `Ctrl+Shift+F7`:
-
+### Build from Source
+Ensure you have Rust and Cargo installed:
 ```sh
-ew-translator
+git clone https://github.com/bnku/ew-translator.git
+cd ew-translator
+cargo build --release
+install -m 755 target/release/ew-translator ~/.local/bin/ew-translator
 ```
 
-Change them with options or environment variables:
+---
 
-```sh
-ew-translator --lang fr --hotkeys 'CTRL+SHIFT+F8'
+## Configuration
 
-EW_TRANSLATOR_LANG=fr \
-EW_TRANSLATOR_HOTKEYS='CTRL+SHIFT+F8' \
-ew-translator
-```
+Settings can be specified via **CLI flags**, **environment variables**, or an **optional configuration file** (`~/.config/ew-translator/config.toml`):
 
-## Translation sources
+| Option | Environment Variable | Description | Default |
+| --- | --- | --- | --- |
+| `-l`, `--lang` | `EW_TRANSLATOR_LANG` | Target language code | `ru` |
+| `-h`, `--hotkeys` | `EW_TRANSLATOR_HOTKEYS` | Global activation shortcut | `CTRL+SHIFT+F7` |
+| `-s`, `--source` | `EW_TRANSLATOR_SOURCE` | Provider (`google-translate`, `gemini`, `openrouter`, `openai`) | `google-translate` |
+| `-m`, `--model` | `EW_TRANSLATOR_MODEL` | Model ID (for AI providers) | Provider default |
+| `-u`, `--api-url` | `EW_TRANSLATOR_API_URL` | Base API URL | Provider default |
+| | `EW_TRANSLATOR_API_KEY` | Provider API key | None |
+| `-c`, `--config` | `EW_TRANSLATOR_CONFIG` | Path to custom config file | `~/.config/ew-translator/config.toml` |
 
-### Google Translate (default)
-
-No credentials are needed:
-
-```sh
-EW_TRANSLATOR_SOURCE=google-translate ew-translator
-```
-
-This source uses an undocumented Google Translate endpoint and can return HTTP 429. Use one of the authenticated providers below when that happens.
-
-### Google Gemini
-
-```sh
-EW_TRANSLATOR_SOURCE=gemini \
-EW_TRANSLATOR_API_KEY='<gemini-api-key>' \
-ew-translator
-```
-
-The default Gemini model is `gemini-2.5-flash-lite`. Override it when needed:
-
-```sh
-EW_TRANSLATOR_SOURCE=gemini \
-EW_TRANSLATOR_API_KEY='<gemini-api-key>' \
-EW_TRANSLATOR_MODEL='<gemini-model-id>' \
-ew-translator
-```
-
-### OpenRouter
-
-OpenRouter requires an explicit model ID:
-
-```sh
-EW_TRANSLATOR_SOURCE=openrouter \
-EW_TRANSLATOR_API_KEY='<openrouter-api-key>' \
-EW_TRANSLATOR_MODEL='<provider/model>' \
-ew-translator
-```
-
-### OpenAI
-
-```sh
-EW_TRANSLATOR_SOURCE=openai \
-EW_TRANSLATOR_API_KEY='<openai-api-key>' \
-EW_TRANSLATOR_MODEL='<model-id>' \
-ew-translator
-```
-
-### OpenAI-compatible server
-
-Set the base URL ending at the API version. ew-translator appends `/chat/completions` unless it is already present:
-
-```sh
-EW_TRANSLATOR_SOURCE=openai \
-EW_TRANSLATOR_API_KEY='<api-key-or-dummy-value>' \
-EW_TRANSLATOR_MODEL='<server-model-id>' \
-EW_TRANSLATOR_API_URL='http://127.0.0.1:1234/v1' \
-ew-translator
-```
-
-Plain HTTP is accepted for local servers. Use HTTPS for remote services.
-
-## Environment variables
-
-| Variable | Meaning |
-| --- | --- |
-| `EW_TRANSLATOR_SOURCE` | `google-translate`, `gemini`, `openrouter`, or `openai` |
-| `EW_TRANSLATOR_API_KEY` | API key for an authenticated provider |
-| `EW_TRANSLATOR_MODEL` | Model ID; required for OpenRouter and OpenAI-compatible sources |
-| `EW_TRANSLATOR_API_URL` | Provider base URL |
-| `EW_TRANSLATOR_LANG` | Target language code or name |
-| `EW_TRANSLATOR_HOTKEYS` | Global shortcut |
-| `EW_TRANSLATOR_CONFIG` | Path to an optional TOML config |
-
-The API key deliberately has no command-line option, keeping it out of shell history and process listings.
-
-## Optional config
-
-No config is required or generated. If present, the default path is:
-
-- `$XDG_CONFIG_HOME/ew-translator/config.toml`; or
-- `~/.config/ew-translator/config.toml` when `XDG_CONFIG_HOME` is unset.
-
-Use another file with `--config <path>` or `EW_TRANSLATOR_CONFIG=<path>`. An explicitly selected missing or invalid file is an error.
-
+### Optional Config File Example
+`~/.config/ew-translator/config.toml`:
 ```toml
 source = "openrouter"
-api_key = "<openrouter-api-key>"
-model = "<provider/model>"
-api_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-v1-..."
+model = "google/gemini-2.5-flash-lite"
 lang = "ru"
-hotkeys = "CTRL+SHIFT+F7"
+hotkeys = "F7"
 ```
 
-If the config contains `api_key`, protect it with `chmod 600`. Environment variables are preferable for secrets.
+---
 
-Settings are resolved in this order:
+## License
 
-1. command-line options;
-2. environment variables;
-3. optional TOML config;
-4. built-in defaults.
-
-## Command-line help
-
-Run `ew-translator --help` for the complete and current list. Available options include `--source`, `--model`, `--api-url`, `--config`, `--lang`, and `--hotkeys`.
+GPL-3.0

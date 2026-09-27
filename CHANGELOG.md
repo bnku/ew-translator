@@ -1,3 +1,15 @@
+# v1.2.0 (2026-09-27)
+
+### Highlights
+
+* **Pure Rust GUI:** Replaced Tauri and WebKitGTK with a lightweight, high-performance pure Rust UI powered by `eframe`/`egui`.
+* **Zero External Dependencies:** Removed `xsel` and WebKit system libraries; selection handling is now fully native via `arboard`.
+* **Smart Adaptive Window:** The popup tightly wraps around content (spinner, single words, or paragraphs) without extra empty margins or fixed dimensions.
+* **Scrollbar for Long Text:** Automatic vertical scrollbar and smooth scrolling when translations exceed maximum height.
+* **Intelligent Screen & Multi-Monitor Awareness:** Multi-monitor boundary detection via Xinerama. The popup never overflows off-screen and automatically flips upwards when near the bottom edge.
+* **Interactive Text:** Translated text can be selected and copied (`Ctrl+C`); clicking outside or pressing `Esc` instantly dismisses the popup without interrupting in-window interactions.
+* **Multi-Platform CI/CD:** Added automated GitHub Actions build and release workflows for Linux, Windows, and macOS.
+
 # v1.1.0 (2026-08-29)
 
 ### Additions
