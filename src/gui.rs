@@ -245,11 +245,12 @@ impl eframe::App for TranslatorApp {
             )
             .show(ctx, |ui| {
                 ui.set_max_width(380.0);
+                ui.set_max_height(580.0);
 
                 let scroll_out = egui::ScrollArea::vertical()
                     .id_salt(self.current_request_id)
                     .auto_shrink([true, true])
-                    .max_height(500.0)
+                    .max_height(580.0)
                     .drag_to_scroll(false)
                     .show(ui, |ui| {
                         if self.loading {
@@ -285,7 +286,7 @@ impl eframe::App for TranslatorApp {
 
                 let target_size = egui::vec2(
                     (content_width + 28.0).clamp(60.0, 440.0),
-                    (content_height + 20.0).clamp(32.0, 540.0),
+                    (content_height + 20.0).clamp(32.0, 600.0),
                 );
                 self.current_size = target_size;
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_size));
