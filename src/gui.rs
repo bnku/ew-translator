@@ -49,6 +49,7 @@ pub struct TranslatorApp {
     target_pos: Option<egui::Pos2>,
     current_size: egui::Vec2,
     reposition_counter: u8,
+    mouse_phys_pos: Option<(i32, i32)>,
 }
 
 impl TranslatorApp {
@@ -99,8 +100,9 @@ impl TranslatorApp {
             current_request_id: 0,
             just_opened: 0,
             target_pos: None,
-            current_size: egui::vec2(130.0, 36.0),
+            current_size: egui::vec2(148.0, 40.0),
             reposition_counter: 0,
+            mouse_phys_pos: None,
         })
     }
 
@@ -111,43 +113,128 @@ impl TranslatorApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
     }
 
+    fn compute_geometry(&self, ctx: &egui::Context) -> (egui::Vec2, egui::Pos2, bool) {
+        let ppp = ctx.pixels_per_point().max(1.0);
+        let (phys_x, phys_y) = self.mouse_phys_pos.unwrap_or((100, 100));
+        let lx = (phys_x as f32) / ppp;
+        let ly = (phys_y as f32) / ppp;
+
+        #[cfg(target_os = "linux")]
+        let mon_rect = get_monitor_rect_for_point(phys_x, phys_y)
+            .map(|r| {
+                egui::Rect::from_min_max(
+                    egui::pos2(r.min.x / ppp, r.min.y / ppp),
+                    egui::pos2(r.max.x / ppp, r.max.y / ppp),
+                )
+            })
+            .unwrap_or_else(|| {
+                let s = ctx.input(|i| i.screen_rect());
+                if s.width() > 10.0 {
+                    s
+                } else {
+                    egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1920.0, 1080.0))
+                }
+            });
+
+        #[cfg(not(target_os = "linux"))]
+        let mon_rect = {
+            let s = ctx.input(|i| i.screen_rect());
+            if s.width() > 10.0 {
+                s
+            } else {
+                egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1920.0, 1080.0))
+            }
+        };
+
+        let screen_margin = 12.0;
+        let cursor_offset_y = 16.0;
+        let cursor_offset_x = 12.0;
+
+        let (content_w, content_h, is_long_text) = if self.loading {
+            (120.0, 20.0, false)
+        } else {
+            let font_id = FontId::proportional(16.0);
+            let max_text_width = 380.0;
+            let galley = ctx.fonts(|f| {
+                f.layout(
+                    self.text.clone(),
+                    font_id,
+                    egui::Color32::WHITE,
+                    max_text_width,
+                )
+            });
+            let sz = galley.size();
+            (sz.x, sz.y, true)
+        };
+
+        let spawn_below_y = ly + cursor_offset_y;
+        let space_below = mon_rect.max.y - spawn_below_y - screen_margin;
+        let space_above = (ly - cursor_offset_y) - mon_rect.min.y - screen_margin;
+
+        // If at least ~150px below cursor: spawn downward and clamp to screen bottom.
+        // If less than 150px below cursor: spawn upward from cursor.
+        let spawn_upwards = space_below < 150.0 && space_above > space_below;
+
+        let available_h = if spawn_upwards {
+            space_above.clamp(100.0, 600.0)
+        } else {
+            space_below.clamp(100.0, 600.0)
+        };
+
+        let pad_x = 28.0;
+        let pad_y = 20.0;
+        let needed_win_h = content_h + pad_y;
+        let needs_scroll = is_long_text && (needed_win_h > available_h);
+
+        let win_h = if needs_scroll {
+            available_h
+        } else {
+            needed_win_h.clamp(36.0, available_h)
+        };
+
+        let scrollbar_extra = if needs_scroll { 14.0 } else { 0.0 };
+        let win_w = (content_w + pad_x + scrollbar_extra).clamp(120.0, 440.0);
+
+        let raw_x = lx + cursor_offset_x;
+        let min_x = mon_rect.min.x + screen_margin;
+        let max_x = (mon_rect.max.x - screen_margin - win_w).max(min_x);
+        let win_x = raw_x.clamp(min_x, max_x);
+
+        let win_y = if spawn_upwards {
+            (ly - cursor_offset_y - win_h).max(mon_rect.min.y + screen_margin)
+        } else {
+            spawn_below_y
+        };
+
+        (egui::vec2(win_w, win_h), egui::pos2(win_x, win_y), needs_scroll)
+    }
+
     fn trigger_translation(&mut self, ctx: &egui::Context) {
         let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
         self.current_request_id = request_id;
 
-        // Reset window size for new request so it doesn't preserve previous large dimensions
-        self.current_size = egui::vec2(130.0, 36.0);
-        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(self.current_size));
-
-        // Mouse::get_mouse_position returns physical screen coordinates.
-        // egui ViewportCommand::OuterPosition takes logical points!
-        // Across multi-monitor setups, convert physical -> logical:
-        let ppp = ctx.pixels_per_point().max(1.0);
-        let logical_pos = match Mouse::get_mouse_position() {
-            Mouse::Position { x, y } => {
-                let lx = (x as f32) / ppp + 12.0;
-                let ly = (y as f32) / ppp + 16.0;
-                Some(egui::pos2(lx, ly))
-            }
+        let phys_mouse = match Mouse::get_mouse_position() {
+            Mouse::Position { x, y } => Some((x, y)),
             Mouse::Error => None,
         };
+        self.mouse_phys_pos = phys_mouse;
 
-        self.target_pos = logical_pos;
-        self.reposition_counter = 4;
         self.visible = true;
-        self.just_opened = 4; // Ignore clicks for first 4 frames while popping up
+        self.loading = true;
+        self.text = "Translating…".to_string();
+        self.just_opened = 4;
+        self.reposition_counter = 4;
 
-        if let Some(pos) = self.target_pos {
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-        }
+        let (init_size, init_pos, _) = self.compute_geometry(ctx);
+        self.current_size = init_size;
+        self.target_pos = Some(init_pos);
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(init_size));
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(init_pos));
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
 
         match selection::get_selected_text() {
             Ok(phrase) => {
-                self.loading = true;
-                self.text = "Translating…".to_string();
-
                 let translator = Arc::clone(&self.translator);
                 let target_lang = self.settings.target_lang.clone();
                 let tx = self.translation_tx.clone();
@@ -174,6 +261,7 @@ impl TranslatorApp {
             Err(err) => {
                 self.loading = false;
                 self.text = err;
+                self.reposition_counter = 4;
             }
         }
     }
@@ -198,6 +286,7 @@ impl eframe::App for TranslatorApp {
                             Ok(translation) => self.text = translation,
                             Err(error) => self.text = format!("Error: {error}"),
                         }
+                        self.reposition_counter = 4;
                     }
                 }
             }
@@ -208,12 +297,15 @@ impl eframe::App for TranslatorApp {
             return;
         }
 
-        // Keep position aligned on multi-monitor setups during initial frames
+        let (target_size, target_pos, needs_scroll) = self.compute_geometry(ctx);
+        self.current_size = target_size;
+        self.target_pos = Some(target_pos);
+
+        // Keep position and size aligned during transition frames
         if self.reposition_counter > 0 {
             self.reposition_counter -= 1;
-            if let Some(pos) = self.target_pos {
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_size));
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(target_pos));
         }
 
         // Handle Escape key
@@ -224,11 +316,12 @@ impl eframe::App for TranslatorApp {
 
         let ppp = ctx.pixels_per_point().max(1.0);
 
-        // Detect mouse click outside window to hide popup
+        // Detect mouse click outside window to hide popup (unless dragging inside)
+        let is_dragging = ctx.dragged_id().is_some();
         if self.just_opened > 0 {
             self.just_opened -= 1;
-        } else if let Some(target_pos) = self.target_pos {
-            let window_rect = egui::Rect::from_min_size(target_pos, self.current_size);
+        } else if !is_dragging {
+            let window_rect = egui::Rect::from_min_size(target_pos, target_size);
             #[cfg(target_os = "linux")]
             if is_mouse_button_pressed_outside(window_rect, ppp) {
                 self.hide(ctx);
@@ -244,52 +337,42 @@ impl eframe::App for TranslatorApp {
                     .inner_margin(Margin::symmetric(14, 10)),
             )
             .show(ctx, |ui| {
-                ui.set_max_width(380.0);
-                ui.set_max_height(580.0);
-
-                let scroll_out = egui::ScrollArea::vertical()
-                    .id_salt(self.current_request_id)
-                    .auto_shrink([true, true])
-                    .max_height(580.0)
-                    .drag_to_scroll(false)
-                    .show(ui, |ui| {
-                        if self.loading {
-                            ui.horizontal(|ui| {
-                                ui.spinner();
-                                ui.add_space(8.0);
-                                ui.label(
-                                    RichText::new(&self.text)
-                                        .font(FontId::proportional(16.0))
-                                        .color(egui::Color32::from_rgb(180, 180, 190)),
-                                );
-                            });
-                        } else {
+                if self.loading {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(&self.text)
+                                .font(FontId::proportional(16.0))
+                                .color(egui::Color32::from_rgb(180, 180, 190)),
+                        );
+                    });
+                } else if needs_scroll {
+                    let max_content_h = (target_size.y - 20.0).max(30.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt(self.current_request_id)
+                        .max_height(max_content_h)
+                        .drag_to_scroll(false)
+                        .show(ui, |ui| {
                             let label = egui::Label::new(
                                 RichText::new(&self.text)
                                     .font(FontId::proportional(16.0))
                                     .color(egui::Color32::from_rgb(245, 245, 245)),
                             )
-                            .wrap();
+                            .wrap()
+                            .selectable(true);
                             ui.add(label);
-                        }
-                    });
-
-                let is_scrolling = scroll_out.content_size.y > scroll_out.inner_rect.height() + 1.0;
-                let scrollbar_width = if is_scrolling {
-                    ui.spacing().scroll.allocated_width()
+                        });
                 } else {
-                    0.0
-                };
-
-                let content_width = scroll_out.inner_rect.width() + scrollbar_width;
-                let content_height = scroll_out.inner_rect.height();
-
-                let target_size = egui::vec2(
-                    (content_width + 28.0).clamp(60.0, 440.0),
-                    (content_height + 20.0).clamp(32.0, 600.0),
-                );
-                self.current_size = target_size;
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_size));
+                    let label = egui::Label::new(
+                        RichText::new(&self.text)
+                            .font(FontId::proportional(16.0))
+                            .color(egui::Color32::from_rgb(245, 245, 245)),
+                    )
+                    .wrap()
+                    .selectable(true);
+                    ui.add(label);
+                }
             });
 
         // Request update while visible to detect clicks outside
@@ -384,4 +467,58 @@ fn setup_fonts(ctx: &egui::Context) {
         s.spacing.scroll.bar_width = 6.0;
         s.spacing.scroll.bar_inner_margin = 4.0;
     });
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_monitor_rect_for_point(px: i32, py: i32) -> Option<egui::Rect> {
+    use x11_dl::{xinerama, xlib};
+    let xlib = xlib::Xlib::open().ok()?;
+    let xinerama = xinerama::Xlib::open().ok()?;
+    let display = unsafe { (xlib.XOpenDisplay)(std::ptr::null()) };
+    if display.is_null() {
+        return None;
+    }
+    let rect = unsafe {
+        let is_active = (xinerama.XineramaIsActive)(display);
+        if is_active != 0 {
+            let mut count: std::os::raw::c_int = 0;
+            let screens_ptr = (xinerama.XineramaQueryScreens)(display, &mut count);
+            if !screens_ptr.is_null() && count > 0 {
+                let screens = std::slice::from_raw_parts(screens_ptr, count as usize);
+                let mut found = None;
+                for s in screens {
+                    let min_x = s.x_org as f32;
+                    let min_y = s.y_org as f32;
+                    let max_x = (s.x_org + s.width) as f32;
+                    let max_y = (s.y_org + s.height) as f32;
+                    let r = egui::Rect::from_min_max(egui::pos2(min_x, min_y), egui::pos2(max_x, max_y));
+                    if (px as f32) >= min_x && (px as f32) < max_x && (py as f32) >= min_y && (py as f32) < max_y {
+                        found = Some(r);
+                        break;
+                    }
+                }
+                (xlib.XFree)(screens_ptr as *mut _);
+                found
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+    unsafe { (xlib.XCloseDisplay)(display); }
+    rect
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_monitor_rect() {
+        if let Some(rect) = get_monitor_rect_for_point(2500, 500) {
+            println!("Found monitor rect for (2500, 500): {:?}", rect);
+            assert!(rect.width() > 0.0);
+        }
+    }
 }
