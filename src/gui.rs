@@ -135,7 +135,7 @@ impl TranslatorApp {
         self.reposition_counter = 4;
         self.visible = true;
         self.has_focus = false;
-        self.just_opened = 4;
+        self.just_opened = 5;
 
         if let Some(pos) = self.target_pos {
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
@@ -180,7 +180,7 @@ impl TranslatorApp {
 }
 
 impl eframe::App for TranslatorApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Process hotkey events
         while let Ok(event) = self.hotkey_event_rx.try_recv() {
             if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
@@ -216,21 +216,27 @@ impl eframe::App for TranslatorApp {
             }
         }
 
+        // Force X11 window focus so clicking outside triggers FocusOut blur
+        #[cfg(target_os = "linux")]
+        if self.just_opened == 4 || self.just_opened == 3 {
+            force_x11_focus(frame);
+        }
+
         // Handle Escape key
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.hide(ctx);
             return;
         }
 
-        // Handle focus loss
-        let is_focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
-        if is_focused {
+        // Handle focus loss (blur on clicking outside)
+        let is_focused = ctx.input(|i| i.viewport().focused);
+        if is_focused == Some(true) {
             self.has_focus = true;
         }
 
         if self.just_opened > 0 {
             self.just_opened -= 1;
-        } else if self.has_focus && !is_focused {
+        } else if self.has_focus && is_focused == Some(false) {
             self.hide(ctx);
             return;
         }
@@ -266,15 +272,6 @@ impl eframe::App for TranslatorApp {
                     ui.add(label)
                 };
 
-                // Click to copy translation and hide
-                if !self.loading && resp.clicked() {
-                    if let Ok(mut cb) = arboard::Clipboard::new() {
-                        let _ = cb.set_text(&self.text);
-                    }
-                    self.hide(ctx);
-                    return;
-                }
-
                 // Adjust window dimensions tightly and strictly to the rendered widget size!
                 let text_size = resp.rect.size();
                 let target_size = egui::vec2(
@@ -287,6 +284,31 @@ impl eframe::App for TranslatorApp {
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         egui::Rgba::from_rgb(18.0 / 255.0, 18.0 / 255.0, 22.0 / 255.0).to_array()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn force_x11_focus(frame: &eframe::Frame) {
+    use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
+    if let (Ok(win_handle), Ok(disp_handle)) = (frame.window_handle(), frame.display_handle()) {
+        if let (RawWindowHandle::Xlib(x_win), RawDisplayHandle::Xlib(x_disp)) =
+            (win_handle.as_raw(), disp_handle.as_raw())
+        {
+            if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+                unsafe {
+                    if let Some(display_ptr) = x_disp.display {
+                        let display = display_ptr.as_ptr() as *mut x11_dl::xlib::Display;
+                        (xlib.XSetInputFocus)(
+                            display,
+                            x_win.window,
+                            x11_dl::xlib::RevertToParent,
+                            x11_dl::xlib::CurrentTime,
+                        );
+                        (xlib.XFlush)(display);
+                    }
+                }
+            }
+        }
     }
 }
 

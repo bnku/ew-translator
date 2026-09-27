@@ -1065,11 +1065,13 @@ dependencies = [
  "global-hotkey",
  "mouse_position",
  "notify-rust",
+ "raw-window-handle",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "toml",
+ "x11-dl",
 ]
 
 [[package]]
