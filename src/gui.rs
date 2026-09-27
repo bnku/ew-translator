@@ -6,6 +6,7 @@ use std::{
         Arc,
     },
     thread,
+    time::Duration,
 };
 
 use eframe::egui::{self, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Frame, Margin, RichText};
@@ -44,9 +45,9 @@ pub struct TranslatorApp {
     loading: bool,
     text: String,
     current_request_id: u64,
-    has_focus: bool,
     just_opened: u8,
     target_pos: Option<egui::Pos2>,
+    current_size: egui::Vec2,
     reposition_counter: u8,
 }
 
@@ -96,16 +97,15 @@ impl TranslatorApp {
             loading: false,
             text: String::new(),
             current_request_id: 0,
-            has_focus: false,
             just_opened: 0,
             target_pos: None,
+            current_size: egui::vec2(130.0, 36.0),
             reposition_counter: 0,
         })
     }
 
     fn hide(&mut self, ctx: &egui::Context) {
         self.visible = false;
-        self.has_focus = false;
         self.just_opened = 0;
         self.reposition_counter = 0;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
@@ -116,7 +116,8 @@ impl TranslatorApp {
         self.current_request_id = request_id;
 
         // Reset window size for new request so it doesn't preserve previous large dimensions
-        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(130.0, 36.0)));
+        self.current_size = egui::vec2(130.0, 36.0);
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(self.current_size));
 
         // Mouse::get_mouse_position returns physical screen coordinates.
         // egui ViewportCommand::OuterPosition takes logical points!
@@ -134,8 +135,7 @@ impl TranslatorApp {
         self.target_pos = logical_pos;
         self.reposition_counter = 4;
         self.visible = true;
-        self.has_focus = false;
-        self.just_opened = 5;
+        self.just_opened = 4; // Ignore clicks for first 4 frames while popping up
 
         if let Some(pos) = self.target_pos {
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
@@ -180,7 +180,7 @@ impl TranslatorApp {
 }
 
 impl eframe::App for TranslatorApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Process hotkey events
         while let Ok(event) = self.hotkey_event_rx.try_recv() {
             if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
@@ -216,29 +216,24 @@ impl eframe::App for TranslatorApp {
             }
         }
 
-        // Force X11 window focus so clicking outside triggers FocusOut blur
-        #[cfg(target_os = "linux")]
-        if self.just_opened == 4 || self.just_opened == 3 {
-            force_x11_focus(frame);
-        }
-
         // Handle Escape key
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.hide(ctx);
             return;
         }
 
-        // Handle focus loss (blur on clicking outside)
-        let is_focused = ctx.input(|i| i.viewport().focused);
-        if is_focused == Some(true) {
-            self.has_focus = true;
-        }
+        let ppp = ctx.pixels_per_point().max(1.0);
 
+        // Detect mouse click outside window to hide popup
         if self.just_opened > 0 {
             self.just_opened -= 1;
-        } else if self.has_focus && is_focused == Some(false) {
-            self.hide(ctx);
-            return;
+        } else if let Some(target_pos) = self.target_pos {
+            let window_rect = egui::Rect::from_min_size(target_pos, self.current_size);
+            #[cfg(target_os = "linux")]
+            if is_mouse_button_pressed_outside(window_rect, ppp) {
+                self.hide(ctx);
+                return;
+            }
         }
 
         egui::CentralPanel::default()
@@ -278,8 +273,12 @@ impl eframe::App for TranslatorApp {
                     (text_size.x + 28.0).clamp(60.0, 420.0),
                     (text_size.y + 20.0).clamp(32.0, 600.0),
                 );
+                self.current_size = target_size;
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_size));
             });
+
+        // Request update while visible to detect clicks outside
+        ctx.request_repaint_after(Duration::from_millis(50));
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
@@ -288,28 +287,58 @@ impl eframe::App for TranslatorApp {
 }
 
 #[cfg(target_os = "linux")]
-fn force_x11_focus(frame: &eframe::Frame) {
-    use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
-    if let (Ok(win_handle), Ok(disp_handle)) = (frame.window_handle(), frame.display_handle()) {
-        if let (RawWindowHandle::Xlib(x_win), RawDisplayHandle::Xlib(x_disp)) =
-            (win_handle.as_raw(), disp_handle.as_raw())
-        {
-            if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-                unsafe {
-                    if let Some(display_ptr) = x_disp.display {
-                        let display = display_ptr.as_ptr() as *mut x11_dl::xlib::Display;
-                        (xlib.XSetInputFocus)(
-                            display,
-                            x_win.window,
-                            x11_dl::xlib::RevertToParent,
-                            x11_dl::xlib::CurrentTime,
-                        );
-                        (xlib.XFlush)(display);
-                    }
-                }
-            }
+fn is_mouse_button_pressed_outside(window_rect: egui::Rect, ppp: f32) -> bool {
+    use x11_dl::xlib;
+
+    let Ok(xlib) = xlib::Xlib::open() else {
+        return false;
+    };
+    let display = unsafe { (xlib.XOpenDisplay)(std::ptr::null()) };
+    if display.is_null() {
+        return false;
+    }
+
+    let screen = unsafe { (xlib.XDefaultScreen)(display) };
+    let root = unsafe { (xlib.XRootWindow)(display, screen) };
+
+    let mut root_return: xlib::Window = 0;
+    let mut child_return: xlib::Window = 0;
+    let mut root_x: i32 = -1;
+    let mut root_y: i32 = -1;
+    let mut win_x: i32 = 0;
+    let mut win_y: i32 = 0;
+    let mut mask: u32 = 0;
+
+    unsafe {
+        (xlib.XQueryPointer)(
+            display,
+            root,
+            &mut root_return,
+            &mut child_return,
+            &mut root_x,
+            &mut root_y,
+            &mut win_x,
+            &mut win_y,
+            &mut mask,
+        );
+        (xlib.XCloseDisplay)(display);
+    }
+
+    if root_x < 0 || root_y < 0 {
+        return false;
+    }
+
+    // Check if mouse buttons (Left, Middle, Right) are pressed
+    let buttons = (xlib::Button1Mask | xlib::Button2Mask | xlib::Button3Mask) as u32;
+    if (mask & buttons) != 0 {
+        let logical_mouse = egui::pos2(root_x as f32 / ppp, root_y as f32 / ppp);
+        // If mouse is OUTSIDE the window rect when clicked -> true!
+        if !window_rect.contains(logical_mouse) {
+            return true;
         }
     }
+
+    false
 }
 
 fn setup_fonts(ctx: &egui::Context) {

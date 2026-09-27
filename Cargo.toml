@@ -30,7 +30,6 @@ eframe = { version = "0.31", default-features = false, features = ["default_font
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11-dl = "2.21"
-raw-window-handle = "0.6"
 
 [profile.release]
 opt-level = "z"
