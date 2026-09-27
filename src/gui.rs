@@ -246,32 +246,46 @@ impl eframe::App for TranslatorApp {
             .show(ctx, |ui| {
                 ui.set_max_width(380.0);
 
-                let resp = if self.loading {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.add_space(8.0);
-                        ui.label(
-                            RichText::new(&self.text)
-                                .font(FontId::proportional(16.0))
-                                .color(egui::Color32::from_rgb(180, 180, 190)),
-                        );
-                    })
-                    .response
+                let scroll_out = egui::ScrollArea::vertical()
+                    .id_salt(self.current_request_id)
+                    .auto_shrink([true, true])
+                    .max_height(500.0)
+                    .drag_to_scroll(false)
+                    .show(ui, |ui| {
+                        if self.loading {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.add_space(8.0);
+                                ui.label(
+                                    RichText::new(&self.text)
+                                        .font(FontId::proportional(16.0))
+                                        .color(egui::Color32::from_rgb(180, 180, 190)),
+                                );
+                            });
+                        } else {
+                            let label = egui::Label::new(
+                                RichText::new(&self.text)
+                                    .font(FontId::proportional(16.0))
+                                    .color(egui::Color32::from_rgb(245, 245, 245)),
+                            )
+                            .wrap();
+                            ui.add(label);
+                        }
+                    });
+
+                let is_scrolling = scroll_out.content_size.y > scroll_out.inner_rect.height() + 1.0;
+                let scrollbar_width = if is_scrolling {
+                    ui.spacing().scroll.allocated_width()
                 } else {
-                    let label = egui::Label::new(
-                        RichText::new(&self.text)
-                            .font(FontId::proportional(16.0))
-                            .color(egui::Color32::from_rgb(245, 245, 245)),
-                    )
-                    .wrap();
-                    ui.add(label)
+                    0.0
                 };
 
-                // Adjust window dimensions tightly and strictly to the rendered widget size!
-                let text_size = resp.rect.size();
+                let content_width = scroll_out.inner_rect.width() + scrollbar_width;
+                let content_height = scroll_out.inner_rect.height();
+
                 let target_size = egui::vec2(
-                    (text_size.x + 28.0).clamp(60.0, 420.0),
-                    (text_size.y + 20.0).clamp(32.0, 600.0),
+                    (content_width + 28.0).clamp(60.0, 440.0),
+                    (content_height + 20.0).clamp(32.0, 540.0),
                 );
                 self.current_size = target_size;
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_size));
@@ -363,4 +377,10 @@ fn setup_fonts(ctx: &egui::Context) {
         .push("roboto".to_owned());
 
     ctx.set_fonts(fonts);
+
+    ctx.style_mut(|s| {
+        s.spacing.scroll = egui::style::ScrollStyle::solid();
+        s.spacing.scroll.bar_width = 6.0;
+        s.spacing.scroll.bar_inner_margin = 4.0;
+    });
 }
